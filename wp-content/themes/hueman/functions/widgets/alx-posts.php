@@ -51,8 +51,9 @@ class AlxPosts extends WP_Widget {
     $instance = wp_parse_args( (array) $instance, $defaults );
 
 		$title = apply_filters('widget_title',$instance['title']);
+    $title = empty( $title ) ? '' : $title;
 		$output = $before_widget."\n";
-		if($title)
+		if( $title || ! empty( $before_title) )
 			$output .= $before_title.$title.$after_title;
 		ob_start();
 
@@ -82,7 +83,7 @@ class AlxPosts extends WP_Widget {
 			<div class="post-item-thumbnail">
 				<a href="<?php the_permalink(); ?>" title="<?php the_title(); ?>">
 					<?php if ( has_post_thumbnail() ): ?>
-						<?php the_post_thumbnail('thumb-medium'); ?>
+						<?php hu_the_post_thumbnail('thumb-medium'); ?>
 					<?php else: ?>
 						<?php hu_print_placeholder_thumb(); ?>
 					<?php endif; ?>

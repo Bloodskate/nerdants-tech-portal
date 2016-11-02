@@ -107,18 +107,102 @@ if ( ! function_exists('hu_print_widgets_in_location') ) {
 }//endif
 
 
+//@param $sidebars_widgets = wp_get_sidebars_widgets()
+//@param $_zone_id = id of the widget zone, ex : primary
+function hu_maybe_print_default_widgets( $sidebars_widgets, $_zone_id ) {
+    //stop here is the zone id has already been populated with widgets
+    if ( array_key_exists( $_zone_id, $sidebars_widgets ) && is_array( $sidebars_widgets[$_zone_id] ) && ! empty($sidebars_widgets[$_zone_id] ) )
+      return;
+
+    //we only want to print default widgets in primary and secondary sidebars
+    if ( ! in_array( $_zone_id, array( 'primary', 'secondary', 'footer-1', 'footer-2', 'footer-3') ) )
+      return;
+
+    $_widgets_to_print = array();
+    switch ($_zone_id) {
+      case 'primary':
+        $_widgets_to_print[] = array(
+          'AlxPosts' => array(
+            'args' => array('before_title' => sprintf('<h3 class="widget-title">%s</h3>', __( 'Discover', 'hueman') ) )
+          )
+        );
+      break;
+      case 'secondary':
+        $_widgets_to_print[] = array(
+          'AlxTabs' => array(
+            'args' => array('before_title' => sprintf('<h3 class="widget-title">%s</h3>', __( 'Recommended', 'hueman') ) )
+          )
+        );
+      break;
+      case 'footer-1':
+        $_widgets_to_print[] = array(
+          'WP_Widget_Recent_Posts' => array(
+            'instance' => array(
+              'title' => __( 'RECENT POSTS', 'hueman'),
+              'number' => 4
+            ),
+            'args' => array(
+              //'before_title' => sprintf('<h3 class="widget-title">%s</h3>', __( 'Recent Posts', 'hueman') )
+            )
+          )
+        );
+      break;
+      case 'footer-2':
+        $_widgets_to_print[] = array(
+          'WP_Widget_Recent_Comments' => array(
+            'instance' => array(
+              'title' => __( 'RECENT COMMENTS', 'hueman'),
+              'number' => 4
+            ),
+            'args' => array(
+              //'before_title' => sprintf('<h3 class="widget-title">%s</h3>', __( 'Recent Posts', 'hueman') )
+            )
+          )
+        );
+      break;
+      case 'footer-3':
+        $_widgets_to_print[] = array(
+          'AlxTabs' => array(
+            'instance' => array(
+              'recent_enable'   => 0,
+              'comments_enable'   => 0,
+              'tags_enable'     => 0,
+              'popular_num' => 2,
+            ),
+            'args' => array('before_title' => sprintf('<h3 class="widget-title"><strong>%s</strong></h3>', __( 'HIGHLIGHTS', 'hueman') ) )
+          )
+        );
+      break;
+    }
+    if ( empty($_widgets_to_print) )
+      return;
+
+    //find the widget instance ids
+    $_wgt_instances = array();
+
+    foreach ( $_widgets_to_print as $_wgt ) {
+      foreach (  $_wgt as $_class => $params ) {
+          if ( class_exists( $_class) ) {
+            $_instance = isset( $params['instance'] ) ? $params['instance'] : array();
+            $_args = isset( $params['args'] ) ? $params['args'] : array();
+            the_widget( $_class, $_instance, $_args );
+          }
+      }
+    }
+}
 
 
 //the job of this function is to print a dynamic widget zone if exists
 //if exists but empty, and if the user is in a customization context, let's print a placeholder
 function hu_print_dynamic_sidebars( $_id, $location ) {
-  global $wp_registered_sidebars;
-  $sidebars_widgets = wp_get_sidebars_widgets();
-
+  global $wp_registered_sidebars, $wp_registered_widgets;
   if ( ! isset($wp_registered_sidebars[$_id]) ) {
     return;
   }
 
+  $sidebars_widgets = wp_get_sidebars_widgets();
+  if ( hu_isprevdem() )
+    hu_maybe_print_default_widgets( $sidebars_widgets, $_id );
 
   if ( hu_is_customize_preview_frame() ) {
     //is there a meta setting overriding the customizer ?
@@ -180,21 +264,23 @@ if ( ! function_exists( 'hu_site_title' ) ) {
 
   function hu_site_title() {
     // Text or image?
-    if ( false != hu_get_img_src_from_option( 'custom-logo' ) ) {
-      $logo = '<img src="'. hu_get_img_src_from_option( 'custom-logo' ) . '" alt="'.get_bloginfo('name').'">';
+    // Since v3.2.4, uses the WP 'custom_logo' theme mod option. Set with a filter.
+    if ( apply_filters( 'hu_display_header_logo', hu_is_checked('display-header-logo') && false != hu_get_img_src_from_option( 'custom-logo' ) ) ) {
+      $logo_src = apply_filters( 'hu_header_logo_src' , hu_get_img_src_from_option( 'custom-logo' ) );
+      $logo_title = '<img src="'. $logo_src . '" alt="' .get_bloginfo('name'). '">';
     } else {
-      $logo = get_bloginfo('name');
+      $logo_title = get_bloginfo('name');
     }
 
-    $link = '<a href="'.home_url('/').'" rel="home">'.$logo.'</a>';
+    $link = '<a class="custom-logo-link" href="'.home_url('/').'" rel="home">'.$logo_title.'</a>';
 
-    if ( is_front_page() || is_home() ) {
+    if ( hu_is_home() ) {
       $sitename = '<h1 class="site-title">'.$link.'</h1>'."\n";
     } else {
       $sitename = '<p class="site-title">'.$link.'</p>'."\n";
     }
 
-    return $sitename;
+    return apply_filters('hu_logo_title', $sitename, $logo_title );
   }
 
 }
@@ -202,14 +288,14 @@ if ( ! function_exists( 'hu_site_title' ) ) {
 
 /*  Page title
 /* ------------------------------------ */
-if ( ! function_exists( 'hu_page_title' ) ) {
+if ( ! function_exists( 'hu_get_page_title' ) ) {
 
-  function hu_page_title() {
+  function hu_get_page_title() {
     global $post;
 
     $heading = esc_attr( get_post_meta($post->ID,'_heading',true) );
     $subheading = esc_attr( get_post_meta($post->ID,'_subheading',true) );
-    $title = $heading?$heading:the_title();
+    $title = $heading ? $heading: get_the_title();
     if($subheading) {
       $title = $title.' <span>'.$subheading.'</span>';
     }
@@ -217,6 +303,96 @@ if ( ! function_exists( 'hu_page_title' ) ) {
     return $title;
   }
 
+}
+
+
+/*  Search Page title
+/* ------------------------------------ */
+if ( ! function_exists( 'hu_get_search_title' ) ) {
+  function hu_get_search_title() {
+    global $wp_query;
+    ?>
+      <?php if ( have_posts() ): ?><i class="fa fa-search"></i><?php endif; ?>
+      <?php if ( ! have_posts() ): ?><i class="fa fa-exclamation-circle"></i><?php endif; ?>
+    <?php
+      $search_results = $wp_query -> found_posts;
+      if ( 1 == $search_results ) {
+          return sprintf( '%1$s %2$s', $search_results, __('Search result','hueman') );
+      } else {
+          return sprintf( '%1$s %2$s', $search_results, __('Search results','hueman') );
+      }
+  }
+}
+
+
+/*  404 Page title
+/* ------------------------------------ */
+if ( ! function_exists( 'hu_get_404_title' ) ) {
+  function hu_get_404_title() {
+    return sprintf('<i class="fa fa-exclamation-circle"></i>%1$s <span>%2$s </span>',
+        __('Error 404.','hueman'),
+        __('Page not found!','hueman')
+    );
+  }
+}
+
+
+/*  Author Page title
+/* ------------------------------------ */
+if ( ! function_exists( 'hu_get_author_title' ) ) {
+  function hu_get_author_title() {
+    $author = get_userdata( get_query_var('author') );
+    return sprintf('<i class="fa fa-user"></i>%1$s <span>%2$s </span>',
+        __('Author:','hueman'),
+        $author->display_name
+    );
+  }
+}
+
+
+/*  Term Page title
+/* @todo => generalize to all taxinomies, including custom ones
+/* ------------------------------------ */
+if ( ! function_exists( 'hu_get_term_page_title' ) ) {
+  function hu_get_term_page_title() {
+    if ( is_category() ) {
+      $title = sprintf('<i class="fa fa-folder-open"></i>%1$s <span>%2$s </span>',
+          __('Category:','hueman'),
+          single_cat_title('', false)
+      );
+    } else if ( is_tag() ) {
+      $title = sprintf('<i class="fa fa-tags"></i>%1$s <span>%2$s </span>',
+          __('Tagged:','hueman'),
+          single_tag_title('', false)
+      );
+    }
+    return $title;
+  }
+}
+
+
+/*  Date archive page title
+/* ------------------------------------ */
+if ( ! function_exists( 'hu_get_date_archive_title' ) ) {
+  function hu_get_date_archive_title() {
+    if ( is_day() ) {
+      $title = sprintf('<i class="fa fa-calendar"></i>%1$s <span>%2$s </span>',
+          __('Daily Archive:','hueman'),
+          get_the_time('F j, Y')
+      );
+    } else if ( is_month() ) {
+      $title = sprintf('<i class="fa fa-calendar"></i>%1$s <span>%2$s </span>',
+          __('Monthly Archive:','hueman'),
+          get_the_time('F Y')
+      );
+    } else if ( is_year() ) {
+      $title = sprintf('<i class="fa fa-calendar"></i>%1$s <span>%2$s </span>',
+          __('Yearly Archive:','hueman'),
+          get_the_time('Y')
+      );
+    }
+    return $title;
+  }
 }
 
 
@@ -230,9 +406,10 @@ if ( ! function_exists( 'hu_blog_title' ) ) {
     $subheading =  wp_kses_post( hu_get_option('blog-subheading') );
     $subheading = $subheading ? $subheading : __('Blog', 'hueman');
 
-    return sprintf('%1$s <span class="hu-blog-subheading">%2$s</span>',
-      $heading,
-      $subheading
+    return apply_filters( 'hu_blog_title', sprintf('%1$s <span class="hu-blog-subheading">%2$s</span>',
+        $heading,
+        $subheading
+      )
     );
   }
 
@@ -333,19 +510,131 @@ if ( ! function_exists( 'hu_get_featured_post_ids' ) ) {
 }
 
 
-/*  Echoes the <img> tag of the placeholder thumbnail
-*   the src property can be filtered
+
+
+
+/* ------------------------------------------------------------------------- *
+ *  Placeholder thumbs for preview demo mode
+/* ------------------------------------------------------------------------- */
+/* Echoes the <img> tag of the placeholder thumbnail
+*  + an animated svg icon
+*  the src property can be filtered
 /* ------------------------------------ */
 if ( ! function_exists( 'hu_print_placeholder_thumb' ) ) {
 
-  function hu_print_placeholder_thumb() {
-    printf( '<img src="%1$s" alt="%2$s" />',
-      apply_filters( 'hu_placeholder_thumb_src' , get_template_directory_uri() . '/assets/front/img/thumb-medium.png' ),
-      get_the_title()
+  function hu_print_placeholder_thumb( $_size = 'thumb-medium' ) {
+    $_unique_id = uniqid();
+    $filter = false;
+    $_sizes = array( 'thumb-medium', 'thumb-small', 'thumb-standard' );
+    if ( ! in_array($_size, $_sizes) )
+      $_size = 'thumb-medium';
+    //default $img_src
+    $_img_src = get_template_directory_uri() . "/assets/front/img/{$_size}.png";
+
+    if ( apply_filters( 'hu-use-svg-thumb-placeholder', true ) ) {
+        if ( hu_isprevdem() ) {
+          $_img_src = hu_get_prevdem_img_src( $_size );
+          $filter = '<span class="filter-placeholder"></span>';
+        } else {
+          $_size = $_size . '-empty';
+          $_img_src = get_template_directory_uri() . "/assets/front/img/{$_size}.png";
+        }
+
+        $_svg_height = in_array($_size, array( 'thumb-medium', 'thumb-standard' ) ) ? 100 : 60;
+        ?>
+        <svg class="hu-svg-placeholder <?php echo $_size; ?>" id="<?php echo $_unique_id; ?>" viewBox="0 0 1792 1792" xmlns="http://www.w3.org/2000/svg"><path d="M928 832q0-14-9-23t-23-9q-66 0-113 47t-47 113q0 14 9 23t23 9 23-9 9-23q0-40 28-68t68-28q14 0 23-9t9-23zm224 130q0 106-75 181t-181 75-181-75-75-181 75-181 181-75 181 75 75 181zm-1024 574h1536v-128h-1536v128zm1152-574q0-159-112.5-271.5t-271.5-112.5-271.5 112.5-112.5 271.5 112.5 271.5 271.5 112.5 271.5-112.5 112.5-271.5zm-1024-642h384v-128h-384v128zm-128 192h1536v-256h-828l-64 128h-644v128zm1664-256v1280q0 53-37.5 90.5t-90.5 37.5h-1536q-53 0-90.5-37.5t-37.5-90.5v-1280q0-53 37.5-90.5t90.5-37.5h1536q53 0 90.5 37.5t37.5 90.5z"/></svg>
+
+        <script type="text/javascript">
+          jQuery( function($){
+            if ( $('#flexslider-featured').length ) {
+              $('#flexslider-featured').on('featured-slider-ready', function() {
+                $( '#<?php echo $_unique_id; ?>' ).animateSvg();
+              });
+            } else { $( '#<?php echo $_unique_id; ?>' ).animateSvg( { svg_opacity : 0.3, filter_opacity : 0.5 } ); }
+          });
+        </script>
+        <?php
+    }
+
+    //make sure we did not last the img_src
+    if ( false == $_img_src )
+      $_img_src = get_template_directory_uri() . "/assets/front/img/{$_size}.png";
+
+    printf( ' %1$s<img class="hu-img-placeholder" src="%2$s" alt="%3$s" data-hu-post-id="%4$s" />',
+      false !== $filter ? $filter : '',
+      apply_filters( 'hu_placeholder_thumb_src' , $_img_src ),
+      get_the_title(),
+      $_unique_id
     );
   }
-
 }
+
+
+
+/* Placeholder thumb helper
+*  @return a random img src string
+*  Can be recursive if a specific img size is not found
+/* ------------------------------------ */
+function hu_get_prevdem_img_src( $_size = 'thumb-medium', $i = 0 ) {
+    //prevent infinite loop
+    if ( 10 == $i ) {
+      return;
+    }
+    $sizes_suffix_map = array(
+        'thumb-small'     => '160x160',
+        'thumb-medium'    => '520x245',
+        'thumb-standard'  => '320x320'
+    );
+    $requested_size = isset( $sizes_suffix_map[$_size] ) ? $sizes_suffix_map[$_size] : '520x245';
+    $path = HU_BASE . 'assets/front/img/demo/';
+    //Build or re-build the global dem img array
+    if ( ! isset( $GLOBALS['prevdem_img'] ) || empty( $GLOBALS['prevdem_img'] ) ) {
+        if ( is_dir( $path ) ) {
+          $imgs = scandir( $path );
+        }
+        $candidates = array();
+        if ( ! $imgs )
+          return array();
+
+        foreach ( $imgs as $img ) {
+          if ( '.' === $img[0] || is_dir( $path . $img ) ) {
+            continue;
+          }
+          $candidates[] = $img;
+        }
+        $GLOBALS['prevdem_img'] = $candidates;
+    }
+    $candidates = $GLOBALS['prevdem_img'];
+    //get a random image name
+    $rand_key = array_rand($candidates);
+    $img_name = $candidates[ $rand_key ];
+    //extract img prefix
+    $img_prefix_expl = explode( '-', $img_name );
+    $img_prefix = $img_prefix_expl[0];
+
+    $requested_size_img_name = "{$img_prefix}-{$requested_size}.jpg";
+    //if file does not exists, reset the global and recursively call it again
+    if ( ! file_exists( $path . $requested_size_img_name ) ) {
+      unset( $GLOBALS['prevdem_img'] );
+      $i++;
+      return hu_get_prevdem_img_src( $_size, $i );
+    }
+    //unset all sizes of the img found and update the global
+    $new_candidates = $candidates;
+    foreach ( $candidates as $_key => $_img ) {
+      if ( substr( $_img , 0, strlen( "{$img_prefix}-" ) ) == "{$img_prefix}-" ) {
+        unset( $new_candidates[$_key] );
+      }
+    }
+    $GLOBALS['prevdem_img'] = $new_candidates;
+    return get_template_directory_uri() . '/assets/front/img/demo/' . $requested_size_img_name;
+}
+
+
+
+
+
+
 
 
 /* ------------------------------------------------------------------------- *
@@ -355,17 +644,15 @@ if ( ! function_exists( 'hu_print_placeholder_thumb' ) ) {
 /*  Body class
 /* ------------------------------------ */
 if ( ! function_exists( 'hu_body_class' ) ) {
-
   function hu_body_class( $classes ) {
     $classes[] = hu_layout_class();
     $classes[] = hu_is_checked( 'boxed' ) ? 'boxed' : 'full-width';
-    if ( has_nav_menu('topbar') ) { $classes[] = 'topbar-enabled'; }
+    if ( hu_has_nav_menu('topbar') ) { $classes[] = 'topbar-enabled'; }
     if ( hu_get_option( 'mobile-sidebar-hide' ) == 's1' ) { $classes[] = 'mobile-sidebar-hide-s1'; }
     if ( hu_get_option( 'mobile-sidebar-hide' ) == 's2' ) { $classes[] = 'mobile-sidebar-hide-s2'; }
     if ( hu_get_option( 'mobile-sidebar-hide' ) == 's1-s2' ) { $classes[] = 'mobile-sidebar-hide'; }
     return $classes;
   }
-
 }
 add_filter( 'body_class', 'hu_body_class' );
 
@@ -383,6 +670,28 @@ if ( ! function_exists( 'hu_favicon' ) ) {
 
 }
 add_filter( 'wp_head', 'hu_favicon' );
+
+
+/*  Custom logo
+/* ------------------------------------ */
+//the purpose of this filter is to handle the retro-compatibility for the WP custom logo introduced in wp 4.5 and implemented in Hueman v3.2.4+
+if ( ! function_exists( 'hu_set_custom_logo' ) ) {
+  function hu_set_custom_logo( $_src, $option_name ) {
+    if ( 'custom-logo' != $option_name )
+      return $_src;
+    //do we have a custom logo available in the theme_mods ?
+    if ( ! function_exists( 'the_custom_logo' ) )
+      return $_src;
+    $custom_logo_id = get_theme_mod( 'custom_logo' );
+    if ( false == $custom_logo_id || empty($custom_logo_id) )
+      return $_src;
+
+    return hu_get_img_src( $custom_logo_id );
+  }
+}
+add_filter( 'hu_img_src_from_option', 'hu_set_custom_logo', 10, 2 );
+
+
 
 
 /*  Excerpt ending
@@ -458,6 +767,9 @@ add_filter( 'body_class', 'hu_browser_body_class' );
 
 
 
+
+
+
 /* ------------------------------------------------------------------------- *
  *  Styles and scripts
 /* ------------------------------------------------------------------------- */
@@ -494,10 +806,15 @@ if ( ! function_exists( 'hu_scripts' ) ) {
         true
     );
 
-    if ( is_singular() && get_option( 'thread_comments' ) ) {
+    if ( is_singular() && get_option( 'thread_comments' ) && comments_open() ) {
       wp_enqueue_script( 'comment-reply' );
     }
 
+    global $wp_registered_widgets;
+    $_regwdgt = array();
+    foreach ( $wp_registered_widgets as $_key => $_value) {
+      $_regwdgt[] = $_key;
+    }
     wp_localize_script(
           'hu-front-scripts',
           'HUParams',
@@ -527,11 +844,14 @@ if ( ! function_exists( 'hu_scripts' ) ) {
                         '#header-widgets'
                     ),
                     'opts'     => array(
-                        'excludeImg' => array( '.tc-holder-img' )
+                        'excludeImg' => array( '.tc-holder-img' ),
+                        'fadeIn_options' => 100
                     )
               )),
               'goldenRatio'         => apply_filters( 'hu_grid_golden_ratio' , 1.618 ),
-              'gridGoldenRatioLimit' => apply_filters( 'hu_grid_golden_ratio_limit' , 350)
+              'gridGoldenRatioLimit' => apply_filters( 'hu_grid_golden_ratio_limit' , 350),
+              'vivusSvgSpeed' => apply_filters( 'hu_vivus_svg_duration' , 300),
+              'isDevMode' => ( defined('WP_DEBUG') && true === WP_DEBUG ) || ( defined('TC_DEV') && true === TC_DEV )
             )
         )//end of filter
        );
@@ -869,4 +1189,168 @@ function hu_is_widget_zone_allowed_in_context( $_contexts, $_map_conditionals ) 
     return true;
 
   return false;
+}
+
+
+//@return void
+//A utility to override the default tmpl from a plugin
+//falls back on get_template_part( $path )
+function hu_get_template_part( $path ) {
+    $_filter = basename($path);
+    //allows developers to deactivate a particular template
+    if ( ! apply_filters( 'hu_is_template_part_on', true, $_filter ) )
+      return;
+    $_custom_path = apply_filters( "hu_tmpl_{$_filter}", false );
+    if ( ! $_custom_path )
+      get_template_part( $path );
+    else if ( '' != $_custom_path )
+      load_template( $_custom_path, true );//true for require_once
+}
+
+
+
+
+/* ------------------------------------------------------------------------- *
+ *  Page Menu
+/* ------------------------------------------------------------------------- */
+/**
+ * Display or retrieve list of pages with optional home link.
+ * Modified copy of wp_page_menu()
+ * @return string html menu
+ */
+function hu_page_menu( $args = array() ) {
+  $defaults = array('show_home' => true, 'sort_column' => 'menu_order, post_title', 'menu_class' => 'menu', 'echo' => true, 'link_before' => '', 'link_after' => '');
+  $args = wp_parse_args( $args, $defaults );
+
+  $args = apply_filters( 'wp_page_menu_args', $args );
+
+  $menu = '';
+
+  $list_args = $args;
+
+  // Show Home in the menu
+  if ( ! empty($args['show_home']) ) {
+    if ( true === $args['show_home'] || '1' === $args['show_home'] || 1 === $args['show_home'] )
+      $text = __('Home' , 'hueman');
+    else
+      $text = $args['show_home'];
+    $class = '';
+    if ( is_front_page() && !is_paged() )
+      $class = 'class="current_page_item"';
+    $menu .= '<li ' . $class . '><a href="' . home_url( '/' ) . '">' . $args['link_before'] . $text . $args['link_after'] . '</a></li>';
+    // If the front page is a page, add it to the exclude list
+    if (get_option('show_on_front') == 'page') {
+      if ( !empty( $list_args['exclude'] ) ) {
+        $list_args['exclude'] .= ',';
+      } else {
+        $list_args['exclude'] = '';
+      }
+      $list_args['exclude'] .= get_option('page_on_front');
+    }
+  }
+
+  $list_args['echo'] = false;
+  $list_args['title_li'] = '';
+  $menu .= str_replace( array( "\r", "\n", "\t" ), '', hu_list_pages($list_args) );
+
+  // if ( $menu )
+  //   $menu = '<ul>' . $menu . '</ul>';
+
+  //$menu = '<div class="' . esc_attr($args['menu_class']) . '">' . $menu . "</div>\n";
+
+  if ( $menu )
+    $menu = '<ul class="' . esc_attr($args['menu_class']) . '">' . $menu . '</ul>';
+
+  //$menu = apply_filters( 'wp_page_menu', $menu, $args );
+  if ( $args['echo'] )
+    echo $menu;
+  else
+    return $menu;
+}
+
+
+/**
+ * Retrieve or display list of pages in list (li) format.
+ * Modified copy of wp_list_pages
+ * @return string HTML list of pages.
+ */
+function hu_list_pages( $args = '' ) {
+  $defaults = array(
+    'depth' => 0, 'show_date' => '',
+    'date_format' => get_option( 'date_format' ),
+    'child_of' => 0, 'exclude' => '',
+    'title_li' => __( 'Pages', 'hueman' ), 'echo' => 1,
+    'authors' => '', 'sort_column' => 'menu_order, post_title',
+    'link_before' => '', 'link_after' => '', 'walker' => '',
+  );
+
+  $r = wp_parse_args( $args, $defaults );
+
+  $output = '';
+  $current_page = 0;
+
+  // sanitize, mostly to keep spaces out
+  $r['exclude'] = preg_replace( '/[^0-9,]/', '', $r['exclude'] );
+
+  // Allow plugins to filter an array of excluded pages (but don't put a nullstring into the array)
+  $exclude_array = ( $r['exclude'] ) ? explode( ',', $r['exclude'] ) : array();
+
+  $r['exclude'] = implode( ',', apply_filters( 'wp_list_pages_excludes', $exclude_array ) );
+
+  // Query pages.
+  $r['hierarchical'] = 0;
+  $pages = get_pages( $r );
+
+  if ( ! empty( $pages ) ) {
+    if ( $r['title_li'] ) {
+      $output .= '<li class="pagenav">' . $r['title_li'] . '<ul>';
+    }
+    global $wp_query;
+    if ( is_page() || is_attachment() || $wp_query->is_posts_page ) {
+      $current_page = get_queried_object_id();
+    } elseif ( is_singular() ) {
+      $queried_object = get_queried_object();
+      if ( is_post_type_hierarchical( $queried_object->post_type ) ) {
+        $current_page = $queried_object->ID;
+      }
+    }
+
+    $output .= hu_walk_page_tree( $pages, $r['depth'], $current_page, $r );
+
+    if ( $r['title_li'] ) {
+      $output .= '</ul></li>';
+    }
+  }
+
+  $html = apply_filters( 'wp_list_pages', $output, $r );
+
+  if ( $r['echo'] ) {
+    echo $html;
+  } else {
+    return $html;
+  }
+}
+
+
+/**
+ * Retrieve HTML list content for page list.
+ *
+ * @uses Walker_Page to create HTML list content.
+ * @since 2.1.0
+ * @see Walker_Page::walk() for parameters and return description.
+ */
+function hu_walk_page_tree($pages, $depth, $current_page, $r) {
+  // if ( empty($r['walker']) )
+  //   $walker = new Walker_Page;
+  // else
+  //   $walker = $r['walker'];
+  $walker = new Walker_Page;
+
+  foreach ( (array) $pages as $page ) {
+    if ( $page->post_parent )
+      $r['pages_with_children'][ $page->post_parent ] = true;
+  }
+
+  $args = array($pages, $depth, $r, $current_page);
+  return call_user_func_array(array($walker, 'walk'), $args);
 }

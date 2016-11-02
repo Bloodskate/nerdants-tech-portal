@@ -7,8 +7,6 @@ add_action( 'customize_controls_enqueue_scripts'        ,  'hu_customize_control
 add_action( 'customize_preview_init'                    , 'hu_customize_preview_js', 20 );
 //exports some wp_query informations. Updated on each preview refresh.
 add_action( 'customize_preview_init'                    , 'hu_add_preview_footer_action', 20 );
-//Various DOM ready actions + print rate link + template
-add_action( 'customize_controls_print_footer_scripts'   , 'hu_various_dom_ready' );
 //Add the visibilities
 add_action( 'customize_controls_print_footer_scripts'   , 'hu_extend_visibilities', 10 );
 
@@ -118,8 +116,14 @@ function hu_extend_postmessage_cb() {
               setting_cbs : $.extend( setting_cbs, {
                     blogname : function(to) {
                       var self = this,
+                          _proto_ = api.CZR_preview.prototype,
                           _hasLogo,
-                          _logoSet = api.has( self._build_setId('custom-logo') ) ? api( self._build_setId('custom-logo') ).get() : '';
+                          _logoSet;
+                      //the logo was previously set with a custom hueman theme option => custom-logo
+                      if ( api.has( _proto_._build_setId('custom-logo') ) )
+                        _logoSet ? api( _proto_._build_setId('custom-logo') ).get() : '';
+                      else if ( api.has( _proto_._build_setId('custom_logo') ) )
+                         _logoSet ? api( _proto_._build_setId('custom_logo') ).get() : '';
 
                       _hasLogo = ( _.isNumber(_logoSet) && _logoSet > 0 ) || ( ! _.isEmpty(_logoSet) && ( false !== _logoSet ) );
 
@@ -223,115 +227,181 @@ function hu_add_customize_preview_data() {
 
 
 
-
-
-
-//hook : customize_controls_print_footer_scripts
-function hu_various_dom_ready() {
-  ?>
-  <script id="rate-tpl" type="text/template" >
-    <?php
-      printf( '<span class="czr-rate-link">%1$s %2$s, <br/>%3$s <a href="%4$s" title="%5$s" class="czr-stars" target="_blank">%6$s</a> %7$s</span>',
-        __( 'If you like' , 'hueman' ),
-        __( 'the Hueman theme' , 'hueman'),
-        __( 'we would love to receive a' , 'hueman' ),
-        'https://' . 'wordpress.org/support/view/theme-reviews/hueman?filter=5',
-        __( 'Review the Hueman theme' , 'hueman' ),
-        '&#9733;&#9733;&#9733;&#9733;&#9733;',
-        __( 'rating. Thanks :) !' , 'hueman')
-      );
-    ?>
-  </script>
-  <script id="rate-theme" type="text/javascript">
-    (function (wp, $) {
-      $( function($) {
-        //Render the rate link
-        _render_rate_czr();
-        function _render_rate_czr() {
-          var _cta = _.template(
-                $( "script#rate-tpl" ).html()
-          );
-          $('#customize-footer-actions').append( _cta() );
-        }
-
-        /* Append text to the content panel title */
-        if ( $('#accordion-panel-hu-content-panel').find('.accordion-section-title').first().length ) {
-          $('#accordion-panel-hu-content-panel').find('.accordion-section-title').first().append(
-            $('<span/>', { html : ' ( Home, Blog, Layout, Sidebars, Slideshows, ... )' } ).css('font-style', 'italic').css('font-size', '14px')
-          );
-        }
-      });
-    })(wp, jQuery)
-  </script>
-  <?php
-}
-
-
 //hook : 'customize_controls_enqueue_scripts':10
 function hu_extend_visibilities() {
+  $_header_img_notice = sprintf( __( "When the %s, this element will not be displayed in your header.", 'hueman'),
+      sprintf('<a href="%1$s" title="%2$s">%2$s</a>',
+        "javascript:wp.customize.section(\'header_design_sec\').focus();",
+        __('header image is enabled', 'hueman')
+      )
+  );
+  $_front_page_content_notice = sprintf( __( "Jump to the %s.", 'hueman'),
+      sprintf('<a href="%1$s" title="%2$s">%2$s</a>',
+        "javascript:wp.customize.section(\'content_blog_sec\').focus();",
+        __('blog design panel', 'hueman')
+      )
+  );
   ?>
   <script id="control-visibilities" type="text/javascript">
     (function (api, $, _) {
-      api.CZR_visibilities.prototype.controlDeps = _.extend(
-        api.CZR_visibilities.prototype.controlDeps,
-        {
-          'dynamic-styles' : {
-            controls: [
-              'boxed',
-              'font',
-              'container-width',
-              'sidebar-padding',
-              'color-1',
-              'color-2',
-              'color-topbar',
-              'color-header',
-              'color-header-menu',
-              'image-border-radius',
-              'body-background'
-            ],
-            callback : function (to) {
-              return '0' !== to && false !== to && 'off' !== to;
-            },
-          },
-          'blog-heading-enabled' : {
-            controls: [
-              'blog-heading',
-              'blog-subheading'
-            ],
-            callback : function (to) {
-              return '0' !== to && false !== to && 'off' !== to;
-            },
-          },
-          'featured-posts-enabled' : {
-            controls: [
-              'featured-category',
-              'featured-posts-count',
-              'featured-posts-full-content',
-              'featured-slideshow',
-              'featured-slideshow-speed',
-              'featured-posts-include'
-            ],
-            callback : function (to) {
-              return '0' !== to && false !== to && 'off' !== to;
-            },
-          },
-          'featured-slideshow' : {
-            controls: [
-              'featured-slideshow-speed'
-            ],
-            callback : function (to) {
-              return '0' !== to && false !== to && 'off' !== to;
-            },
-          },
-          'about-page' : {
-            controls: [
-              'help-button'
-            ],
-            callback : function (to) {
-              return '0' !== to && false !== to && 'off' !== to;
-            },
-          }
-        }//end of visibility {}
+      //@return boolean
+      var _is_checked = function( to ) {
+              return 0 !== to && '0' !== to && false !== to && 'off' !== to;
+      };
+      //when a dominus object define both visibility and action callbacks, the visibility can return 'unchanged' for non relevant servi
+      //=> when getting the visibility result, the 'unchanged' value will always be checked and resumed to the servus control current active() state
+      api.CZR_visibilities.prototype.dominiDeps = _.extend(
+            api.CZR_visibilities.prototype.dominiDeps,
+            [
+                {
+                        dominus : 'show_on_front',
+                        servi : ['show_on_front', 'page_for_posts' ],
+                        visibility : function( to, servusShortId ) {
+                              if ( 'show_on_front' == servusShortId )
+                                return 'unchanged';
+                              return 'page' == to;
+                        },
+                        actions : function( to, servusShortId ) {
+                              var wpServusId = api.CZR_Helpers.build_setId( servusShortId ),
+                                    _class = 'hu-front-posts-notice',
+                                    _maybe_print_html = function() {
+                                        if ( $( '.' + _class , api.control(wpServusId).container ).length )
+                                          return;
+                                        var _html = '<span class="description customize-control-description ' + _class +'"><?php echo $_front_page_content_notice; ?></span>';
+                                        api.control(wpServusId).container.find('.customize-control-title').after( _html );
+                                    };
+
+                              if ( 'show_on_front' == servusShortId ) {
+                                    if ( 'posts' != to && $( '.' + _class , api.control(wpServusId).container ).length ) {
+                                          $('.' + _class, api.control(wpServusId).container ).remove();
+                                    } else if ( 'posts' == to ) {
+                                          _maybe_print_html();
+                                    }
+                              } else if ( 'page_for_posts' == servusShortId ) {
+                                    if ( 'page' != to && $( '.' + _class , api.control(wpServusId).container ).length ) {
+                                          $('.' + _class, api.control(wpServusId).container ).remove();
+                                    } else if ( 'page' == to ) {
+                                          _maybe_print_html();
+                                    }
+                              }
+                        }
+                },
+                {
+                        dominus : 'display-header-logo',
+                        servi : ['logo-max-height', 'custom_logo', 'custom-logo' ],//depending on the WP version, the custom logo option is different.
+                        visibility : function( to ) {
+                              return _is_checked(to);
+                        }
+                },
+                {
+                        dominus : 'use-header-image',
+                        onSectionExpand : false,
+                        servi : ['header_image', 'display-header-logo', 'custom_logo', 'custom-logo', 'logo-max-height', 'blogname', 'blogdescription', 'header-ads'],
+                        visibility : function( to, servusShortId ) {
+                              if ( 'header_image' != servusShortId )
+                                return 'unchanged';
+                              return _is_checked(to);
+                        },
+                        actions : function( to, servusShortId ) {
+                              var wpServusId = api.CZR_Helpers.build_setId( servusShortId ),
+                                  shortServusId = api.CZR_Helpers.getOptionName( servusShortId ),
+                                  _return = api.control(wpServusId).active();
+
+                              //print a notice
+                              switch( shortServusId ) {
+                                    case 'display-header-logo' :
+                                    case 'custom_logo' :
+                                    case 'blogname' :
+                                    case 'blogdescription' :
+                                    case 'custom-logo' :
+                                    case 'header-ads' :
+                                        if ( ! api.control.has(wpServusId) )
+                                          return;
+
+                                        if ( ! _is_checked(to) && $( '.hu-header-image-notice', api.control(wpServusId).container ).length ) {
+                                              $('.hu-header-image-notice', api.control(wpServusId).container ).remove();
+                                        } else if ( _is_checked(to) ) {
+                                              if ( $( '.hu-header-image-notice', api.control(wpServusId).container ).length )
+                                                return;
+                                              var _html = '<span class="description customize-control-description hu-header-image-notice"><?php echo $_header_img_notice; ?></span>';
+                                              api.control(wpServusId).container.find('.customize-control-title').after( _html );
+                                        }
+                                    break;
+                              }
+
+                              //change opacity
+                              switch( shortServusId ) {
+                                    case 'display-header-logo' :
+                                    case 'logo-max-height' :
+                                    case 'custom_logo' :
+                                    case 'custom-logo' :
+                                    case 'header-ads' :
+                                        if ( ! api.control.has(wpServusId) )
+                                          return;
+                                        if ( ! _is_checked(to) ) {
+                                              $(api.control(wpServusId).container ).css('opacity', 1);
+                                        } else {
+                                              $(api.control(wpServusId).container ).css('opacity', 0.6);
+                                        }
+                                    break;
+                              }
+                        }//actions()
+                  },
+                  {
+                        dominus : 'dynamic-styles',
+                        servi : [
+                              'boxed',
+                              'font',
+                              'container-width',
+                              'sidebar-padding',
+                              'color-1',
+                              'color-2',
+                              'color-topbar',
+                              'color-header',
+                              'color-header-menu',
+                              'image-border-radius',
+                              'body-background'
+                        ],
+                        visibility : function ( to ) {
+                              return _is_checked(to);
+                        }
+                  },
+                  {
+                        dominus : 'blog-heading-enabled',
+                        servi : [ 'blog-heading', 'blog-subheading' ],
+                        visibility : function ( to ) {
+                              return _is_checked(to);
+                        }
+                  },
+                  {
+                        dominus : 'featured-posts-enabled',
+                        servi : [
+                              'featured-category',
+                              'featured-posts-count',
+                              'featured-posts-full-content',
+                              'featured-slideshow',
+                              'featured-slideshow-speed',
+                              'featured-posts-include'
+                        ],
+                        visibility : function ( to ) {
+                              return _is_checked(to);
+                        }
+                  },
+                  {
+                        dominus : 'featured-slideshow',
+                        servi : [ 'featured-slideshow-speed' ],
+                        visibility : function ( to ) {
+                              return _is_checked(to);
+                        }
+                  },
+                  {
+                        dominus : 'about-page',
+                        servi : [ 'help-button' ],
+                        visibility : function ( to ) {
+                              return _is_checked( to );
+                        }
+                  }
+            ]//dominiDeps {}
       );//_.extend()
     }) ( wp.customize, jQuery, _);
   </script>

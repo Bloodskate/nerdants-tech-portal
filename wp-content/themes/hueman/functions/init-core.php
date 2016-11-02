@@ -37,6 +37,11 @@ function hu_doing_customizer_ajax() {
 }
 
 
+//@return boolean
+function hu_is_partial_refreshed_on() {
+  return apply_filters( 'hu_partial_refresh_on', true );
+}
+
 
 /**
 * Are we in a customization context ? => ||
@@ -83,24 +88,6 @@ function hu_checked( $val ) {
   echo hu_is_checked( $val ) ? 'checked="checked"' : '';
 }
 
-/**
-* Checks if we use a child theme. Uses a deprecated WP functions (get _theme_data) for versions <3.4
-* @return boolean
-*
-*/
-function hu_is_child() {
-  // get themedata version wp 3.4+
-  if ( function_exists( 'wp_get_theme' ) ) {
-    //get WP_Theme object
-    $_theme       = wp_get_theme();
-    //define a boolean if using a child theme
-    return $_theme -> parent() ? true : false;
-  }
-  else {
-    $_theme       = call_user_func('get_' .'theme_data', get_stylesheet_directory().'/style.css' );
-    return ! empty($_theme['Template']) ? true : false;
-  }
-}
 
 
 /**
@@ -140,6 +127,47 @@ function hu_user_started_before_version( $_ver ) {
 }
 
 
+/**
+* Is there a menu assigned to a given location ?
+* @return bool
+*/
+function hu_has_nav_menu( $_location ) {
+  if ( has_nav_menu( $_location ) || ! in_array( $_location, array( 'header', 'footer') ) )
+    return has_nav_menu( $_location );
+  $bool = false;
+  switch ($_location) {
+    case 'header':
+      $bool = hu_is_checked( "default-menu-{$_location}" );
+    break;
+
+    case 'footer':
+      $bool = hu_isprevdem();
+    break;
+  }
+  return $bool;
+}
+
+
+
+//@return an array of unfiltered options
+//=> all options or a single option val
+function hu_get_raw_option( $opt_name = null, $opt_group = null ) {
+    $alloptions = wp_cache_get( 'alloptions', 'options' );
+    $alloptions = maybe_unserialize($alloptions);
+    if ( ! is_null( $opt_group ) && isset($alloptions[$opt_group]) ) {
+      $alloptions = maybe_unserialize($alloptions[$opt_group]);
+    }
+    if ( is_null( $opt_name ) )
+      return $alloptions;
+    return isset( $alloptions[$opt_name] ) ? maybe_unserialize($alloptions[$opt_name]) : false;
+}
+
+
+//@return bool
+function hu_isprevdem() {
+  $_active_theme = hu_get_raw_option( 'template' );
+  return apply_filters( 'hu_isprevdem', ( $_active_theme != strtolower(THEMENAME) && ! is_child_theme() ) );
+}
 
 
 /* ------------------------------------------------------------------------- *
@@ -152,8 +180,18 @@ function hu_user_started_before_version( $_ver ) {
 */
 function hu_is_home() {
   //get info whether the front page is a list of last posts or a page
-  return ( is_home() && ( 'posts' == get_option( 'show_on_front' ) || 'nothing' == get_option( 'show_on_front' ) ) ) || is_front_page();
+  return is_home() || ( is_home() && ( 'posts' == get_option( 'show_on_front' ) || '__nothing__' == get_option( 'show_on_front' ) ) ) || is_front_page();
 }
+
+/**
+* Check if we show posts or page content on home page
+* @return  bool
+*/
+function hu_is_home_empty() {
+  //check if the users has choosen the "no posts or page" option for home page
+  return ( is_home() || is_front_page() ) && '__nothing__' == get_option( 'show_on_front' );
+}
+
 
 /**
 * helper
@@ -162,6 +200,23 @@ function hu_is_home() {
 */
 function hu_is_blogpage() {
   return is_home() && ! is_front_page();
+}
+
+/**
+* helper
+* //must be archive or search result. Returns false if home is empty in options.
+* @return  bool
+*/
+function hu_is_post_list() {
+  global $wp_query;
+
+  return apply_filters( 'hu_is_post_list',
+    ( ! is_singular()
+    && ! is_404()
+    && ( is_search() && 0 != $wp_query -> post_count )
+    && ! hu_is_home_empty() )
+    || hu_is_blogpage() || is_home()
+  );
 }
 
 /**
@@ -204,6 +259,7 @@ function hu_get_img_src( $img ) {
   return is_ssl() ? str_replace('http://', 'https://', $_img_src) : $_img_src;
 }
 
+
 /**
 * wrapper of hu_get_img_src specific for theme options
 * @return logo src string
@@ -211,16 +267,28 @@ function hu_get_img_src( $img ) {
 function hu_get_img_src_from_option( $option_name ) {
   $_img_option    = esc_attr( hu_get_option($option_name) );
   if ( ! $_img_option )
-    return;
+    $_src = false;
 
-  $_logo_src      = hu_get_img_src( $_img_option );
+  $_src      = hu_get_img_src( $_img_option );
   //hook
-  return apply_filters( "hu_logo_src" , $_logo_src ) ;
+  return apply_filters( "hu_img_src_from_option" , $_src, $option_name ) ;
 }
 
 
-
-
+/**
+* wrapper of the_post_thumbnail
+* => the goal is to "scope" the filter the thumbnail html only to the Hueman theme.
+* => avoid potential conflict with plugins
+* @echo html
+*/
+function hu_the_post_thumbnail( $size = 'post-thumbnail', $attr = '' ) {
+  $post = get_post();
+  if ( ! $post ) {
+    return '';
+  }
+  $html = get_the_post_thumbnail( null, $size, $attr );
+  echo apply_filters( 'hu_post_thumbnail_html', $html, $size, $attr );
+}
 
 
 /* ------------------------------------------------------------------------- *
@@ -279,8 +347,10 @@ if( ! defined( 'HU_BASE_CHILD' ) )      define( 'HU_BASE_CHILD' , get_stylesheet
 if( ! defined( 'HU_BASE_URL' ) )        define( 'HU_BASE_URL' , get_template_directory_uri() . '/' );
 //HU_BASE_URL_CHILD http url of the loaded child theme
 if( ! defined( 'HU_BASE_URL_CHILD' ) )  define( 'HU_BASE_URL_CHILD' , get_stylesheet_directory_uri() . '/' );
-//THEMENAME contains the Name of the currently loaded theme
+//THEMENAME contains the Name of the currently loaded theme. Will always be the parent theme name is a child theme is activated.
 if( ! defined( 'THEMENAME' ) )       define( 'THEMENAME' , $hu_base_data['title'] );
+//TEXT DOMAIN FOR TRANSLATIONS
+if( ! defined( 'THEME_TEXT_DOM' ) )       define( 'THEME_TEXT_DOM' , 'hueman' );
 //HU_OPTION_GROUP contains the Name of the hueman theme options in wp_options
 //=> was previously option tree default name
 if( ! defined( 'HU_THEME_OPTIONS' ) ) define( 'HU_THEME_OPTIONS' , apply_filters( 'hu_theme_options', 'hu_theme_options' ) );
@@ -669,10 +739,11 @@ function hu_clean_old_sidebar_options( $_new_sb_opts, $__options ) {
   return $_new_sb_opts;
 }
 
-
-function hu_maybe_update_options() {
-  $_options = get_option( HU_THEME_OPTIONS );
-
+//fired early
+//@param $_options = get_option( HU_THEME_OPTIONS )
+//handles the transfer from option tree to customizer
+//=> as of v3.0.10, options have been moved from option tree to customizer to be compliant with the wp.org theme guidelines
+function hu_maybe_transfer_option_tree_to_customizer( $_options ) {
   $copy_option_tree = isset( $_GET['copy_option_tree'] );
 
   //have the option already been copied ?
@@ -694,11 +765,40 @@ function hu_maybe_update_options() {
 
 }
 
+//fired early
+//@return void()
+//@param $_options = get_option( HU_THEME_OPTIONS )
+//handles the transition to the WP custom_logo support introduced in wp 4.5.
+//Several cases :
+//1) user had defined a custom logo with the previous Hueman option
+//=> the option has to be copied to WP custom_logo theme mod
+//=> display-header-logo set to true
+//2) user had not defined a custom logo in Hueman
+//=> display-header-logo set to false
+function hu_maybe_copy_logo_to_theme_mod( $_options ) {
+  //keep using the old logo if WP version < 4.5
+  if ( ! function_exists( 'the_custom_logo' ) )
+    return;
+
+  $_old_custom_logo_exists = isset($_options['custom-logo']) && false != $_options['custom-logo'] && ! empty($_options['custom-logo']);
+  if ( $_old_custom_logo_exists ) {
+    set_theme_mod( 'custom_logo', $_options['custom-logo'] );
+    $_options['display-header-logo'] = 1;
+    unset($_options['custom-logo']);
+    update_option( HU_THEME_OPTIONS, $_options );
+  }
+}
+
 
 //copy old options from option tree framework into new option raw 'hu_theme_options'
+//copy logo from previous to custom_logo introduced in wp 4.5
 //only if user is logged in
-if ( is_user_logged_in() )
-  hu_maybe_update_options();
+if ( is_user_logged_in() && current_user_can( 'edit_theme_options' ) ) {
+  $_options = get_option( HU_THEME_OPTIONS );
+  hu_maybe_transfer_option_tree_to_customizer( $_options );
+  hu_maybe_copy_logo_to_theme_mod( $_options );
+}
+
 
 
 /* ------------------------------------------------------------------------- *
@@ -751,19 +851,68 @@ if ( !isset( $content_width ) ) { $content_width = 720; }
 if ( ! function_exists( 'hu_setup' ) ) {
 
   function hu_setup() {
+    // Enable header image
+    // the header image is stored as a theme mod option
+    // get_theme_mod( 'header_image', get_theme_support( 'custom-header', 'default-image' ) );
+    // Backward compat : if a header-image was previously set by the user, then it becomes the default image, otherwise we fall back on the asset's default.
+    $_old_header_image_val = hu_get_option('header-image');
+    $did_user_set_an_image = false != $_old_header_image_val && ! empty($_old_header_image_val);
+    $headers = apply_filters( 'hu_default_header_img' , array(
+            'default-header' => array(
+              'url'           => '%s/assets/front/img/header/default-header-280.jpg',
+              'thumbnail_url' => '%s/assets/front/img/header/default-header-280.jpg',
+              'description'   => 'Coffee'
+            ),
+            'yosemite' => array(
+              'url'           => '%s/assets/front/img/header/yosemite-280.jpg',
+              'thumbnail_url' => '%s/assets/front/img/header/yosemite-280.jpg',
+              'description'   => 'Yosemite'
+            ),
+            'bridge' => array(
+              'url'           => '%s/assets/front/img/header/bridge-280.jpg',
+              'thumbnail_url' => '%s/assets/front/img/header/bridge-280.jpg',
+              'description'   => 'Golden Gate Bridge'
+            ),
+            'nyc' => array(
+              'url'           => '%s/assets/front/img/header/nyc-280.jpg',
+              'thumbnail_url' => '%s/assets/front/img/header/nyc-280.jpg',
+              'description'   => 'New York City'
+            ),
+            'california' => array(
+              'url'           => '%s/assets/front/img/header/california-280.jpg',
+              'thumbnail_url' => '%s/assets/front/img/header/california-280.jpg',
+              'description'   => 'California'
+            )
+        )
+    );
+    register_default_headers( $headers );
+
+    add_theme_support( 'custom-header', array(
+        'default-image' => $did_user_set_an_image ? hu_get_img_src_from_option('header-image') : sprintf( '%1$s/assets/front/img/header/default-header-280.jpg' , get_template_directory_uri() ),
+        'width'     => 1380,
+        'height'    => 280,
+        'flex-width' => true,
+        'flex-height' => true,
+        'header-text'  => false
+    ) );
+
+    // Enable Custom Logo
+    add_theme_support( 'custom-logo', array(
+        'width'     => 250,
+        'height'    => 100,
+        'flex-width' => true,
+        'flex-height' => true,
+    ) );
+
     // Enable title tag
     add_theme_support( 'title-tag' );
-
     // Enable automatic feed links
     // => Adds RSS feed links to <head> for posts and comments.
     add_theme_support( 'automatic-feed-links' );
-
     // Enable featured image
     add_theme_support( 'post-thumbnails' );
-
     // Enable post format support
     add_theme_support( 'post-formats', array( 'audio', 'aside', 'chat', 'gallery', 'image', 'link', 'quote', 'status', 'video' ) );
-
     // Declare WooCommerce support
     add_theme_support( 'woocommerce' );
 
@@ -783,6 +932,10 @@ if ( ! function_exists( 'hu_setup' ) ) {
 
 }
 add_action( 'after_setup_theme', 'hu_setup' );
+
+
+
+
 
 
 /*  Register sidebars
@@ -863,6 +1016,27 @@ function hu_get_default_widget_zones() {
     )
   );
 }
+
+//@return an array of default widgets ids
+function hu_get_widget_zone_ids() {
+  $widgets = hu_get_default_widget_zones();
+  return array_keys( $widgets );
+}
+
+
+//@return an array of widget option names
+function hu_get_registered_widgets_option_names() {
+  global $wp_registered_widgets;
+  $opt_names = array();
+  foreach ($wp_registered_widgets as $id => $data ) {
+    if ( ! isset($data['callback']) || ! isset($data['callback'][0]) || ! isset($data['callback'][0] -> option_name ) )
+      continue;
+    if ( ! in_array( $data['callback'][0] -> option_name, $opt_names ) )
+      array_push( $opt_names, $data['callback'][0] -> option_name );
+  }
+  return $opt_names;
+}
+
 
 
 //@return the array describing the previous correspondance between location => widget zone name
@@ -1129,19 +1303,21 @@ add_filter( 'embed_oembed_html', 'hu_embed_wmode_transparent', 10, 3 );
 /*  Add responsive container to embeds
 /* ------------------------------------ */
 if ( ! function_exists( 'hu_embed_html' ) ) {
-
   function hu_embed_html( $html, $url ) {
-
-    $pattern    = '/^https?:\/\/(www\.)?twitter\.com/';
-    $is_twitter = preg_match( $pattern, $url );
-
-    if ( 1 === $is_twitter ) {
+    require_once( ABSPATH . WPINC . '/class-oembed.php' );
+    $wp_oembed = _wp_oembed_get_object();
+    $provider = $wp_oembed -> get_provider( $url, $args = '' );
+    if ( ! $provider || false === $data = $wp_oembed->fetch( $provider, $url, $args ) ) {
       return $html;
     }
-
-    return '<div class="video-container">' . $html . '</div>';
+    $type = $data -> type;
+    switch( $type ) {
+        case 'video' :
+          $html = sprintf('<div class="video-container">%1$s</div>', $html );
+        break;
+    }
+    return $html;
   }
-
 }
 add_filter( 'embed_oembed_html', 'hu_embed_html', 10, 3 );
 
@@ -1241,6 +1417,115 @@ function hu_add_help_button() {
 
 
 
+
+
+
+/* ------------------------------------------------------------------------- *
+ *  Loads Required Plugin Class and Setup
+/* ------------------------------------------------------------------------- */
+if ( is_admin() && ! hu_is_customizing() ) {
+  /**
+  * Include the TGM_Plugin_Activation class.
+  */
+  load_template( get_template_directory() . '/functions/admin/class-tgm-plugin-activation.php' );
+  add_action( 'tgmpa_register', 'hu_register_required_plugins' );
+}
+
+
+/**
+ * Register the required plugins for this theme.
+ *
+ * In this example, we register two plugins - one included with the TGMPA library
+ * and one from the .org repo.
+ *
+ * The variable passed to tgmpa_register_plugins() should be an array of plugin
+ * arrays.
+ *
+ * This function is hooked into tgmpa_init, which is fired within the
+ * TGM_Plugin_Activation class constructor.
+ */
+function hu_register_required_plugins() {
+
+  /**
+   * Array of plugin arrays. Required keys are name and slug.
+   * If the source is NOT from the .org repo, then source is also required.
+   */
+  $plugins = array(
+
+    // This is an example of how to include a plugin pre-packaged with a theme
+    // array(
+    //   'name'            => 'TGM Example Plugin', // The plugin name
+    //   'slug'            => 'tgm-example-plugin', // The plugin slug (typically the folder name)
+    //   'source'          => get_stylesheet_directory() . '/lib/plugins/tgm-example-plugin.zip', // The plugin source
+    //   'required'        => true, // If false, the plugin is only 'recommended' instead of required
+    //   'version'         => '', // E.g. 1.0.0. If set, the active plugin must be this version or higher, otherwise a notice is presented
+    //   'force_activation'    => false, // If true, plugin is activated upon theme activation and cannot be deactivated until theme switch
+    //   'force_deactivation'  => false, // If true, plugin is deactivated upon theme switch, useful for theme-specific plugins
+    //   'external_url'      => '', // If set, overrides default API URL and points to an external URL
+    // ),
+
+    // This is an example of how to include a plugin from the WordPress Plugin Repository
+    array(
+      'name'    => 'Hueman Addons',
+      'slug'    => 'hueman-addons',
+      'required'  => false,
+    ),
+
+  );
+
+
+  /**
+   * Array of configuration settings. Amend each line as needed.
+   * If you want the default strings to be available under your own theme domain,
+   * leave the strings uncommented.
+   * Some of the strings are added into a sprintf, so see the comments at the
+   * end of each line for what each argument will be.
+   */
+  $config = array(
+      'id'           => 'hueman',                 // Unique ID for hashing notices for multiple instances of TGMPA.
+      'default_path' => '',                      // Default absolute path to bundled plugins.
+      'menu'         => 'tgmpa-install-plugins', // Menu slug.
+      'has_notices'  => true,                    // Show admin notices or not.
+      'dismissable'  => true,                    // If false, a user cannot dismiss the nag message.
+      'dismiss_msg'  => '',                      // If 'dismissable' is false, this message will be output at top of nag.
+      'is_automatic' => false,                   // Automatically activate plugins after installation or not.
+      'message'      => '',                      // Message to output right before the plugins table.
+      'message'       => '',              // Message to output right before the plugins table
+      'strings'         => array(
+          'page_title'                            => __( 'Install Required Plugins', 'hueman' ),
+          'menu_title'                            => __( 'Install Plugins', 'hueman' ),
+          'installing'                            => __( 'Installing Plugin: %s', 'hueman' ), // %1$s = plugin name
+          'oops'                                  => __( 'Something went wrong with the plugin API.', 'hueman' ),
+          'notice_can_install_required'           => _n_noop( 'The Hueman theme requires the following plugin: %1$s.', 'This theme requires the following plugins: %1$s.', 'hueman' ), // %1$s = plugin name(s)
+          'notice_can_install_recommended'      => _n_noop( 'The Hueman theme recommends the Hueman Addons: %1$s.', 'This theme recommends the following plugins: %1$s.', 'hueman' ), // %1$s = plugin name(s)
+          'notice_cannot_install'           => _n_noop( 'Sorry, but you do not have the correct permissions to install the %s plugin. Contact the administrator of this site for help on getting the plugin installed.', 'Sorry, but you do not have the correct permissions to install the %s plugins. Contact the administrator of this site for help on getting the plugins installed.', 'hueman' ), // %1$s = plugin name(s)
+          'notice_can_activate_required'          => _n_noop( 'The Hueman Addons required plugin is currently inactive: %1$s.', 'The following required plugins are currently inactive: %1$s.', 'hueman' ), // %1$s = plugin name(s)
+          'notice_can_activate_recommended'     => _n_noop( 'The Hueman Addons plugin is currently inactive: %1$s.', 'The following recommended plugins are currently inactive: %1$s.', 'hueman' ), // %1$s = plugin name(s)
+          'notice_cannot_activate'          => _n_noop( 'Sorry, but you do not have the correct permissions to activate the %s plugin. Contact the administrator of this site for help on getting the plugin activated.', 'Sorry, but you do not have the correct permissions to activate the %s plugins. Contact the administrator of this site for help on getting the plugins activated.', 'hueman' ), // %1$s = plugin name(s)
+          'notice_ask_to_update'            => _n_noop( 'The Hueman Addons plugin needs to be updated to its latest version to ensure maximum compatibility with the Hueman theme: %1$s.', 'The following plugins need to be updated to their latest version to ensure maximum compatibility with this theme: %1$s.', 'hueman' ), // %1$s = plugin name(s)
+          'notice_cannot_update'            => _n_noop( 'Sorry, but you do not have the correct permissions to update the %s plugin. Contact the administrator of this site for help on getting the plugin updated.', 'Sorry, but you do not have the correct permissions to update the %s plugins. Contact the administrator of this site for help on getting the plugins updated.', 'hueman' ), // %1$s = plugin name(s)
+          'install_link'                  => _n_noop( 'Begin installing plugin', 'Begin installing plugins', 'hueman' ),
+          'activate_link'                 => _n_noop( 'Activate Hueman Addons', 'Activate installed plugins', 'hueman' ),
+          'return'                                => __( 'Return to Required Plugins Installer', 'hueman' ),
+          'plugin_activated'                      => __( 'Plugin activated successfully.', 'hueman' ),
+          'complete'                  => __( 'All plugins installed and activated successfully. %s', 'hueman' ), // %1$s = dashboard link
+          'nag_type'                  => 'updated' // Determines admin notice type - can only be 'updated' or 'error'
+      )
+  );
+
+  tgmpa( $plugins, $config );
+
+}
+
+
+
+
+
+
+
+
+
+
 /* ------------------------------------------------------------------------- *
  *  Loads Front End files
 /* ------------------------------------------------------------------------- */
@@ -1274,7 +1559,7 @@ if ( ! function_exists('alx_blog_title') ) {
 
 if ( ! function_exists('alx_page_title') ) {
   function alx_page_title() {
-    return hu_page_title();
+    return hu_get_page_title();
   }
 }
 
@@ -1300,4 +1585,65 @@ if ( ! function_exists('alx_sidebar_primary') ) {
   function alx_sidebar_primary() {
     return 'primary';
   }
+}
+
+
+/* ------------------------------------------------------------------------- *
+ *  Demo
+/* ------------------------------------------------------------------------- */
+if ( hu_isprevdem() ) {
+    add_filter('hu_display_header_logo', '__return_true');
+    add_filter('hu_header_logo_src', 'hu_prevdem_logo' );
+    add_filter('hu_footer_logo_src', 'hu_prevdem_logo' );
+    function hu_prevdem_logo( $_src ) {
+      $logo_path = 'assets/front/img/demo/logo/logo.png';
+      if ( file_exists( HU_BASE . $logo_path ) )
+        return get_template_directory_uri() . '/' . $logo_path;
+      return $_src;
+    }
+    add_filter('hu_blog_title', 'hu_prevdem_blogheading');
+    function hu_prevdem_blogheading() {
+        return sprintf('%1$s <span class="hu-blog-subheading">%2$s</span>',
+            "THE BLOG",
+            "WHAT'S NEW?"
+        );
+    }
+
+    add_filter('hu_opt_social-links', 'hu_prevdem_socials');
+    function hu_prevdem_socials() {
+      $def_social = array(
+          'title' => '',
+          'social-icon' => '',
+          'social-link' => '',
+          'social-color' => 'rgba(255,255,255,0.7)',
+          'social-target' => 1
+      );
+      $raw = array(
+            array(
+                'title' => 'Follow us on Twitter',
+                'social-icon' => 'fa-twitter'
+            ),
+            array(
+                'title' => 'Follow us on Facebook',
+                'social-icon' => 'fa-facebook'
+            ),
+            array(
+                'title' => 'Follow us on Linkedin',
+                'social-icon' => 'fa-linkedin'
+            ),
+            array(
+                'title' => 'Follow us on Google',
+                'social-icon' => 'fa-google'
+            ),
+            array(
+                'title' => 'Rss feed',
+                'social-icon' => 'fa-rss'
+            )
+      );
+      $socials = array();
+      foreach ( $raw as $key => $data) {
+        $socials[] = wp_parse_args( $data, $def_social );
+      }
+      return $socials;
+    }
 }

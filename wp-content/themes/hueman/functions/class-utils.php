@@ -85,7 +85,7 @@ if ( ! class_exists( 'HU_utils' ) ) :
     function hu_wp_filters() {
       if ( apply_filters( 'hu_img_smart_load_enabled', hu_is_checked('smart_load_img') ) ) {
           add_filter( 'the_content'                       , array( $this , 'hu_parse_imgs' ), PHP_INT_MAX );
-          add_filter( 'post_thumbnail_html'               , array( $this , 'hu_parse_imgs' ), PHP_INT_MAX );
+          add_filter( 'hu_post_thumbnail_html'            , array( $this , 'hu_parse_imgs' ) );
       }
       add_filter( 'wp_title'                            , array( $this , 'hu_wp_title' ), 10, 2 );
     }
@@ -98,7 +98,9 @@ if ( ! class_exists( 'HU_utils' ) ) :
     * @return string
     */
     function hu_parse_imgs( $_html ) {
-      if( is_feed() || is_preview() || ( wp_is_mobile() && apply_filters('hu_disable_img_smart_load_mobiles', false ) ) )
+      $_bool = is_feed() || is_preview() || ( wp_is_mobile() && apply_filters('hu_disable_img_smart_load_mobiles', false ) );
+
+      if ( apply_filters( 'hu_disable_img_smart_load', $_bool, current_filter() ) )
         return $_html;
 
       return preg_replace_callback('#<img([^>]+?)src=[\'"]?([^\'"\s>]+)[\'"]?([^>]*)>#', array( $this , 'hu_regex_callback' ) , $_html);
@@ -253,13 +255,6 @@ if ( ! class_exists( 'HU_utils' ) ) :
         //assign false value if does not exist, just like WP does
         $_single_opt    = isset($__options[$option_name]) ? $__options[$option_name] : false;
 
-        //ctx retro compat => falls back to default val if ctx like option detected
-        //important note : some options like hu_slider are not concerned by ctx
-        if ( ! $this -> hu_is_option_excluded_from_ctx( $option_name ) ) {
-          if ( is_array($_single_opt) && ! class_exists( 'HU_ctx' ) )
-            $_single_opt = $_default_val;
-        }
-
         //allow ctx filtering globally
         $_single_opt = apply_filters( "hu_opt" , $_single_opt , $option_name , $option_group, $_default_val );
 
@@ -331,33 +326,68 @@ if ( ! class_exists( 'HU_utils' ) ) :
 
 
     /***************************
-    * CTX COMPAT
+    * SKOPE
     ****************************/
     /**
-    * Boolean helper : tells if this option is excluded from the ctx treatments.
+    * Boolean helper
     * @return bool
     */
-    function hu_is_option_excluded_from_ctx( $opt_name ) {
-      return in_array( $opt_name, $this -> hu_get_skope_excluded_options() );
+    function hu_is_option_skoped( $opt_name ) {
+      return ! in_array( $opt_name, $this -> hu_get_skope_excluded_options() );
     }
 
 
     /**
-    * Helper : define a set of options not impacted by ctx like last_update_notice.
-    * @return  array of excluded option names
+    * Helper : define a set of options not skoped
+    * @return array()
     */
     function hu_get_skope_excluded_options() {
       return apply_filters(
         'hu_get_skope_excluded_options',
-        array(
-          'defaults',
-          'last_update_notice',
-          'last_update_notice_pro',
-          'sidebar-areas',
-          'social-links',
-          'body-background'
+        array_merge(
+          array(
+            //hueman design option
+            'favicon',
+            'dynamic-styles',
+            'post-comments',
+            'page-comments',
+            'layout-home',
+            'layout-single',
+            'layout-archive',
+            'layout-archive-category',
+            'layout-search',
+            'layout-404',
+            'layout-page',
+            'sidebar-areas',
+
+            //wp built-ins
+            'show_on_front',
+            'page_on_front',
+            'page_for_posts'
+          ),
+          $this -> hu_get_protected_options()
         )
       );
+    }
+
+
+    /**
+    * Helper : define a set protected options. Never reset typically.
+    * @return array() of opt name
+    */
+    function hu_get_protected_options() {
+      return apply_filters(
+          'hu_protected_options',
+          array( 'defaults', 'ver', 'has_been_copied', 'last_update_notice', 'last_update_notice_pro' )
+      );
+    }
+
+    /**
+    * Boolean helper
+    * @return bool
+    */
+    function hu_is_option_protected( $opt_name ) {
+      return in_array( $opt_name, $this -> hu_get_protected_options() );
     }
 
   }//end of class

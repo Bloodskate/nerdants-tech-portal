@@ -1,10 +1,10 @@
-<article id="post-<?php the_ID(); ?>" <?php post_class('group'); ?>>
+<article id="post-<?php the_ID(); ?>" <?php post_class( array('group', 'grid-item') ); ?>>
 	<div class="post-inner post-hover">
 
 		<div class="post-thumbnail">
 			<a href="<?php the_permalink(); ?>" title="<?php the_title(); ?>">
 				<?php if ( has_post_thumbnail() ): ?>
-					<?php the_post_thumbnail('thumb-medium'); ?>
+					<?php hu_the_post_thumbnail('thumb-medium'); ?>
 				<?php elseif ( hu_is_checked('placeholder') ): ?>
 					<?php hu_print_placeholder_thumb(); ?>
 				<?php endif; ?>
