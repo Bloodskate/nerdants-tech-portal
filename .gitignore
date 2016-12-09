@@ -3,6 +3,7 @@
 /wp-content/upgrade
 /wp-content/uploads
 /wp-content/logs
+/theme/template
 /sitemap.*
 wp-config.php
 # Hidden files
