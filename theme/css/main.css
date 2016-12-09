@@ -1,0 +1,36 @@
+.navbar{
+  margin-bottom: 10px;
+}
+.main{
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.featured{
+  height: 40vh;
+  width: auto;
+}
+
+.featured-big {
+  height: 100%;
+  padding-left: 5px;
+  padding-right:5px;
+}
+
+.big-content{
+  height: 100%;
+  background: grey; /* For browsers that do not support gradients */
+  background: -webkit-linear-gradient(rgba(0,0,0,0.1),rgba(0,0,0,0.9)); /*Safari 5.1-6*/
+  background: -o-linear-gradient(rgba(0,0,0,0.1),rgba(0,0,0,0.9)); /*Opera 11.1-12*/
+  background: -moz-linear-gradient(rgba(0,0,0,0.1),rgba(0,0,0,0.9)); /*Fx 3.6-15*/
+  background: linear-gradient(rgba(0,0,0,0.1), rgba(0,0,0,0.9)); /*Standard*/
+}
+
+.featured-small {
+  height: 50%;
+
+  background: grey; /* For browsers that do not support gradients */
+  background: -webkit-linear-gradient(rgba(0,0,0,0.1),rgba(0,0,0,0.9)); /*Safari 5.1-6*/
+  background: -o-linear-gradient(rgba(0,0,0,0.1),rgba(0,0,0,0.9)); /*Opera 11.1-12*/
+  background: -moz-linear-gradient(rgba(0,0,0,0.1),rgba(0,0,0,0.9)); /*Fx 3.6-15*/
+  background: linear-gradient(rgba(0,0,0,0.1), rgba(0,0,0,0.9)); /*Standard*/
+}
