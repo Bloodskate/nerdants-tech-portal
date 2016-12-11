@@ -1,3 +1,6 @@
+:root{
+  --navbar-lower-size: 70px;
+}
 .navbar{
   margin-bottom: 0px;
   border-radius: 0px;
@@ -8,6 +11,42 @@
   width:100%;
 }
 
+.navbar-default .navbar-nav>li>a {
+    color: #fff;
+}
+
+.navbar-nav > li > a, .navbar-brand {
+    padding-top:5px !important; padding-bottom:0 !important;
+    height: 30px;
+}
+.navbar {
+  min-height:30px !important;
+}
+
+.navbar-upper {
+  background-color: #1593ba;
+  color: #ffffff;
+  border: none;
+}
+
+.navbar-upper > li > a {
+  color: #ffffff;
+}
+
 .filler{
   min-height: 2000px;
+}
+
+.navbar-collapse {
+  padding: 0;
+}
+
+
+.navbar-lower {
+  height: var(--navbar-lower-size);
+}
+
+
+.padding-top {
+  padding-top: var(--navbar-lower-size);
 }
